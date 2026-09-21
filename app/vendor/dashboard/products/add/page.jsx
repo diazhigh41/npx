@@ -2,22 +2,24 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client'; // Sesuaikan dengan path supabase client kamu
 
 export default function AddProductPage() {
   const router = useRouter();
+  const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
 
   const [form, setForm] = useState({
     productType: 'physical',
-    listingType: 'ordinary', 
+    listingType: 'ordinary',
     category: '',
     title: '',
     shortDescription: '',
     tags: '',
     description: '',
-    image: null,
-    imagePreview: null,
+    image: null,        // File objek asli untuk dikirim ke Supabase
+    imagePreview: null, // URL temporary untuk preview tampilan
   });
 
   const handleChange = (e) => {
@@ -28,6 +30,7 @@ export default function AddProductPage() {
     }));
   };
 
+  // Handler saat user pilih gambar (pakai createObjectURL biar cepat & ringan)
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -39,12 +42,34 @@ export default function AddProductPage() {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
-    // Simpan data form sementara ke localStorage agar bisa diakses di halaman details
     try {
+      let uploadedImageUrl = '';
+
+      // Upload gambar ke Supabase Storage jika ada file yang diunggah
+      if (form.image) {
+        const fileExt = form.image.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const filePath = `products/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('products')
+          .upload(filePath, form.image);
+
+        if (uploadError) throw uploadError;
+
+        // Ambil Public URL hasil upload Supabase
+        const { data: urlData } = supabase.storage
+          .from('products')
+          .getPublicUrl(filePath);
+
+        uploadedImageUrl = urlData.publicUrl;
+      }
+
+      // Simpan data form + URL Gambar Supabase ke localStorage
       const dataToSave = {
         productType: form.productType,
         listingType: form.listingType,
@@ -53,18 +78,20 @@ export default function AddProductPage() {
         shortDescription: form.shortDescription,
         tags: form.tags,
         description: form.description,
-        imagePreview: form.imagePreview,
+        imageUrl: uploadedImageUrl,     // URL publik dari Supabase Storage
+        imagePreview: form.imagePreview, // URL preview temporary
       };
-      localStorage.setItem('temp_product_general', JSON.stringify(dataToSave));
-    } catch (err) {
-      console.error('Gagal menyimpan ke localStorage:', err);
-    }
 
-    setTimeout(() => {
+      localStorage.setItem('temp_product_general', JSON.stringify(dataToSave));
+
+      // Mengarahkan ke halaman details
+      router.push('/vendor/dashboard/products/details');
+    } catch (err) {
+      console.error('Gagal mengunggah gambar/menyimpan data:', err);
+      alert('Gagal mengunggah gambar. Pastikan Policy RLS di bucket products Supabase sudah kamu atur!');
+    } finally {
       setLoading(false);
-      // Mengarahkan ke halaman details yang sejajar dengan folder add
-      router.push('/vendor/dashboard/products/details'); 
-    }, 500);
+    }
   };
 
   return (

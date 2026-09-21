@@ -1,17 +1,32 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { Image as ImageIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import Header from "../../components/Header"; 
 import Footer from "../../components/Footer";
 
 export default function PaymentMethodPage() {
-  const [selectedMethod, setSelectedMethod] = useState("paypal");
+  const router = useRouter();
   const [depositAmount, setDepositAmount] = useState("10");
   const [isAddFunds, setIsAddFunds] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Load Midtrans Snap script secara dinamis jika belum ada
+    const snapScript = "https://app.sandbox.midtrans.com/snap/snap.js"; 
+    const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || "";
+    
+    let script = document.querySelector(`script[src="${snapScript}"]`);
+    if (!script) {
+      script = document.createElement("script");
+      script.src = snapScript;
+      if (clientKey) script.setAttribute("data-client-key", clientKey);
+      script.async = true;
+      document.body.appendChild(script);
+    }
+
+    // Cek parameter type & ambil nominal jika add-funds
     const params = new URLSearchParams(window.location.search);
     if (params.get("type") === "add-funds") {
       setIsAddFunds(true);
@@ -20,33 +35,69 @@ export default function PaymentMethodPage() {
     }
   }, []);
 
-  const handleContinueToPayment = () => {
+  const handlePayWithMidtrans = async () => {
     if (!agreed) {
       setShowError(true);
       return;
     }
     setShowError(false);
-    
-    // Simpan pilihan ke localStorage
-    localStorage.setItem("selectedPaymentMethod", selectedMethod);
-    
-    // Langsung arahkan ke halaman sukses pembayaran (tempat data masuk ke database)
-    window.location.href = "/cart/payment-completed";
-  };
+    setLoading(true);
 
-  const paymentOptions = [
-    { id: "paypal", name: "PayPal", desc: "Pay securely via PayPal account or Credit Card.", logos: ["Visa", "Mastercard", "Amex", "Discover", "PayPal"] },
-    { id: "stripe", name: "Stripe", desc: "Credit or debit card payment processed securely.", logos: ["Visa", "Mastercard", "Amex", "Discover", "JCB", "Diners", "Stripe"] },
-    { id: "paystack", name: "Paystack", desc: "Online payments for Africa and globally.", logos: ["Visa", "Mastercard", "Verve", "Paystack"] },
-    { id: "razorpay", name: "Razorpay", desc: "Accept UPI, Cards, NetBanking & Wallets.", logos: ["Visa", "Mastercard", "Amex", "Maestro", "Diners", "RuPay", "Razorpay"] },
-    { id: "flutterwave", name: "Flutterwave", desc: "Seamless payments across Africa and beyond.", logos: ["Visa", "Mastercard", "Amex", "Maestro", "Flutterwave"] },
-    { id: "iyzico", name: "Iyzico", desc: "Secure digital commerce platform.", logos: ["Visa", "Mastercard", "Amex", "Troy", "Iyzico"] },
-    { id: "midtrans", name: "Midtrans", desc: "Indonesia's leading online payment gateway.", logos: ["Visa", "Mastercard", "Amex", "JCB", "Midtrans"] },
-    { id: "paytabs", name: "PayTabs", desc: "Award-winning payment gateway solution.", logos: ["Visa", "Mastercard", "Amex", "Discover", "PayTabs"] },
-    { id: "yoomoney", name: "YooMoney", desc: "Popular electronic payment service.", logos: ["Visa", "Mastercard", "Maestro", "MIR", "YooMoney"] },
-    { id: "mercadopago", name: "Mercado Pago", desc: "Latin America leading payment technology.", logos: ["Visa", "Mastercard", "Amex", "Discover", "Boleto", "Mercado Pago"] },
-    { id: "bank", name: "Bank Transfer", desc: "Make your payment directly into our bank account.", logos: [] },
-  ];
+    try {
+      // Fetch ke backend API Next.js untuk mendapatkan Snap Token Midtrans
+      const response = await fetch("/api/midtrans/create-transaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          type: isAddFunds ? "add-funds" : "cart", 
+          amount: parseFloat(depositAmount) 
+        })
+      });
+      
+      // Amankan dari SyntaxError: Cek apakah status HTTP OK (200-299)
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Error Backend Response:", errorText);
+        alert(`Gagal memproses transaksi (${response.status}). Pastikan API Route '/api/midtrans/create-transaction' sudah ada.`);
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.token) {
+        if (window.snap) {
+          // Panggil Midtrans Snap Popup (QRIS, VA, E-Wallet, dll)
+          window.snap.pay(data.token, {
+            onSuccess: function (result) {
+              console.log("Success:", result);
+              localStorage.setItem("selectedPaymentMethod", "midtrans");
+              window.location.href = "/cart/payment-completed";
+            },
+            onPending: function (result) {
+              console.log("Pending:", result);
+              alert("Menunggu pembayaran Anda.");
+            },
+            onError: function (result) {
+              console.log("Error:", result);
+              alert("Pembayaran gagal!");
+            },
+            onClose: function () {
+              alert("Popup pembayaran ditutup.");
+            }
+          });
+        } else {
+          alert("SDK Midtrans belum selesai dimuat. Silakan coba lagi sebentar.");
+        }
+      } else {
+        alert(data.error || "Gagal mendapatkan token transaksi dari Midtrans.");
+      }
+    } catch (err) {
+      console.error("Network Error:", err);
+      alert("Terjadi kesalahan koneksi atau server tidak merespons.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -61,47 +112,16 @@ export default function PaymentMethodPage() {
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-4">1. Payment Method</h2>
 
-              <div className="space-y-3">
-                {paymentOptions.map((item) => {
-                  const isSelected = selectedMethod === item.id;
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={() => setSelectedMethod(item.id)}
-                      className={`border rounded-xl p-4 cursor-pointer transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
-                        isSelected
-                          ? "border-teal-500 bg-white ring-1 ring-teal-500 shadow-xs"
-                          : "border-gray-200 hover:border-gray-300 bg-white"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
-                          isSelected ? "border-teal-600 bg-teal-600 text-white" : "border-gray-300 bg-white"
-                        }`}>
-                          {isSelected && <span className="w-2 h-2 rounded-full bg-white"></span>}
-                        </div>
-                        <div>
-                          <span className="font-bold text-gray-900 text-sm block">{item.name}</span>
-                          <span className="text-xs text-gray-500">{item.desc}</span>
-                        </div>
-                      </div>
-
-                      {item.logos.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-                          {item.logos.map((logoName, idx) => (
-                            <div 
-                              key={idx} 
-                              className="h-7 px-2 bg-gray-50 border border-gray-200 rounded flex items-center gap-1 text-[11px] text-gray-600 font-medium"
-                            >
-                              <ImageIcon size={12} className="text-gray-400" />
-                              <span>{logoName}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+              {/* Midtrans Selected Box */}
+              <div className="border border-teal-500 bg-teal-50/20 rounded-xl p-5 flex items-center justify-between shadow-xs">
+                <div className="flex items-center space-x-4">
+                  <div className="w-5 h-5 rounded-full bg-teal-600 flex items-center justify-center text-white text-xs">✓</div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-base">Midtrans Payment Gateway</h3>
+                    <p className="text-xs text-gray-500">QRIS, GoPay, Transfer Bank (BCA, Mandiri, BNI), Indomaret, dll.</p>
+                  </div>
+                </div>
+                <span className="text-xs bg-teal-100 text-teal-800 font-semibold px-3 py-1 rounded-full">Secure</span>
               </div>
             </div>
 
@@ -131,12 +151,20 @@ export default function PaymentMethodPage() {
               )}
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-between items-center pt-2">
               <button
-                onClick={handleContinueToPayment}
-                className="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-8 py-3 rounded-lg transition-colors cursor-pointer text-sm shadow-sm flex items-center gap-2"
+                onClick={() => router.back()}
+                className="px-6 py-2.5 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium text-sm cursor-pointer"
               >
-                Continue to Payment <span>&rsaquo;</span>
+                &lsaquo; Back
+              </button>
+
+              <button
+                onClick={handlePayWithMidtrans}
+                disabled={loading}
+                className="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-8 py-3 rounded-lg transition-colors cursor-pointer text-sm shadow-sm flex items-center gap-2 disabled:opacity-50"
+              >
+                {loading ? "Memproses..." : "Bayar Sekarang dengan Midtrans"} <span>&rsaquo;</span>
               </button>
             </div>
 
@@ -150,9 +178,9 @@ export default function PaymentMethodPage() {
               <h2 className="text-base font-bold text-gray-900 border-b pb-3">Summary</h2>
               
               <div className="space-y-3 text-sm">
-                <div className="font-semibold text-gray-900">Add Funds</div>
+                <div className="font-semibold text-gray-900">{isAddFunds ? "Add Funds" : "Order Summary"}</div>
                 <div className="flex justify-between text-gray-600 text-xs">
-                  <span>Deposit Amount:</span>
+                  <span>{isAddFunds ? "Deposit Amount:" : "Subtotal:"}</span>
                   <span className="font-semibold text-gray-900">${depositAmount}</span>
                 </div>
                 
