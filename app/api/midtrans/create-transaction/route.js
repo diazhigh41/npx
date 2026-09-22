@@ -6,17 +6,18 @@ export async function POST(request) {
     const body = await request.json();
     const { type, amount } = body;
 
-    const serverKey = (process.env.MIDTRANS_SERVER_KEY || "").trim();
-
-    let snap = new midtransClient.Snap({
-      isProduction: true,
-      serverKey: serverKey,
+    const snap = new midtransClient.Snap({
+      isProduction: false,
+      serverKey: process.env.MIDTRANS_SERVER_KEY,
     });
+
+    const numericAmount = Number(amount) || 10;
+    const grossAmount = Math.round(numericAmount * 16000);
 
     const parameter = {
       transaction_details: {
-        order_id: `MODESY-${type}-${Date.now()}`,
-        gross_amount: amount ? Math.round(amount * 16000) : 160000,
+        order_id: `MODESY-${type || 'deposit'}-${Date.now()}`,
+        gross_amount: grossAmount,
       },
       customer_details: {
         first_name: "Member Modesy",
@@ -29,6 +30,7 @@ export async function POST(request) {
 
   } catch (error) {
     console.error("Midtrans Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const errorMessage = error.ApiResponse?.error_messages?.[0] || error.message || "Gagal koneksi Midtrans";
+    return NextResponse.json({ error: errorMessage }, { status: 400 });
   }
 }

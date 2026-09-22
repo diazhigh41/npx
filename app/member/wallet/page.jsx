@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Wallet, 
   PlusCircle, 
@@ -13,13 +13,58 @@ export default function WalletPage() {
   const [isAddFundsOpen, setIsAddFundsOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState("10");
 
-  // Contoh data deposits
-  const depositsData = [
+  // State untuk Saldo Wallet
+  const [walletBalance, setWalletBalance] = useState(9.95);
+
+  // State untuk Data Deposits
+  const [depositsData, setDepositsData] = useState([
     { id: "BTR-HM95ZHFS7S-369RASZE", method: "Bank Transfer", amount: "$10 (USD) - Pending Payment", date: "2026-09-13 / 14:19" },
     { id: "BTR-HM0LWO7M4I-AG10P9OR", method: "Bank Transfer", amount: "$10 (USD) - Pending Payment", date: "2026-09-05 / 20:02" },
     { id: "BTR-HLWS2ZQSXN-5CTYLLNC", method: "Bank Transfer", amount: "$25 (USD) - Pending Payment", date: "2026-09-02 / 08:42" },
     { id: "BTR-HLVTZUEYA6-8ACIIO9U", method: "Bank Transfer", amount: "$100 (USD) - Pending Payment", date: "2026-09-01 / 12:05" },
-  ];
+  ]);
+
+  // Load saldo & riwayat dari localStorage saat pertama kali dibuka
+  useEffect(() => {
+    const savedBalance = localStorage.getItem("walletBalance");
+    if (savedBalance) {
+      setWalletBalance(parseFloat(savedBalance));
+    }
+
+    const savedDeposits = localStorage.getItem("walletDeposits");
+    if (savedDeposits) {
+      setDepositsData(JSON.parse(savedDeposits));
+    }
+
+    // Cek apakah ada deposit baru yang sukses dari halaman checkout/payment-completed
+    const pendingAmount = localStorage.getItem("pendingDepositAmount");
+    const isCompleted = localStorage.getItem("depositSuccess");
+
+    if (pendingAmount && isCompleted === "true") {
+      const addedAmount = parseFloat(pendingAmount);
+      
+      // Update saldo
+      const newBalance = (savedBalance ? parseFloat(savedBalance) : 9.95) + addedAmount;
+      setWalletBalance(newBalance);
+      localStorage.setItem("walletBalance", newBalance.toString());
+
+      // Buat data deposit baru
+      const newDeposit = {
+        id: `BTR-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+        method: "Midtrans Payment Gateway",
+        amount: `$${addedAmount} (USD) - Success`,
+        date: new Date().toISOString().replace("T", " / ").substring(0, 16)
+      };
+
+      const updatedDeposits = [newDeposit, ...(savedDeposits ? JSON.parse(savedDeposits) : depositsData)];
+      setDepositsData(updatedDeposits);
+      localStorage.setItem("walletDeposits", JSON.stringify(updatedDeposits));
+
+      // Bersihkan flag agar tidak tereksekusi 2 kali
+      localStorage.removeItem("pendingDepositAmount");
+      localStorage.removeItem("depositSuccess");
+    }
+  }, []);
 
   const handleContinueToCheckout = () => {
     if (Number(depositAmount) < 10) {
@@ -46,7 +91,7 @@ export default function WalletPage() {
           </div>
         </div>
         <p className="text-sm font-medium text-gray-500">Wallet Balance</p>
-        <h2 className="text-4xl font-extrabold text-gray-900 mt-1">$9.95</h2>
+        <h2 className="text-4xl font-extrabold text-gray-900 mt-1">${walletBalance.toFixed(2)}</h2>
         
         <button
           onClick={() => setIsAddFundsOpen(true)}
@@ -101,10 +146,12 @@ export default function WalletPage() {
                     <td className="py-4 px-4 text-gray-600">{item.method}</td>
                     <td className="py-4 px-4">
                       <div className="text-gray-900 font-medium">{item.amount}</div>
-                      <button className="mt-1.5 inline-flex items-center gap-1 bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors cursor-pointer">
-                        <Send size={12} />
-                        Report Bank Transfer
-                      </button>
+                      {!item.amount.includes("Success") && (
+                        <button className="mt-1.5 inline-flex items-center gap-1 bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors cursor-pointer">
+                          <Send size={12} />
+                          Report Bank Transfer
+                        </button>
+                      )}
                     </td>
                     <td className="py-4 px-4 text-gray-600">
                       <div>{item.date}</div>
@@ -170,7 +217,6 @@ export default function WalletPage() {
         {/* 4. TAB SET PAYOUT ACCOUNT */}
         {activeTab === "settings" && (
           <div className="space-y-6">
-            {/* Sub-tab Payout Method */}
             <div className="flex flex-wrap gap-2 border-b border-gray-100 pb-4">
               {[
                 { id: "paypal", label: "PayPal" },
@@ -192,7 +238,6 @@ export default function WalletPage() {
               ))}
             </div>
 
-            {/* Form Payout Account */}
             <div className="space-y-4 pt-2">
               {payoutMethod === "paypal" && (
                 <div>

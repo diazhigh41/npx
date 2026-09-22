@@ -1,4 +1,5 @@
 "use client";
+import Script from 'next/script';
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../../components/Header"; 
@@ -11,22 +12,9 @@ export default function PaymentMethodPage() {
   const [agreed, setAgreed] = useState(false);
   const [showError, setShowError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState(null);
 
   useEffect(() => {
-    // Load Midtrans Snap script secara dinamis jika belum ada
-    const snapScript = "https://app.sandbox.midtrans.com/snap/snap.js"; 
-    const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || "";
-    
-    let script = document.querySelector(`script[src="${snapScript}"]`);
-    if (!script) {
-      script = document.createElement("script");
-      script.src = snapScript;
-      if (clientKey) script.setAttribute("data-client-key", clientKey);
-      script.async = true;
-      document.body.appendChild(script);
-    }
-
-    // Cek parameter type & ambil nominal jika add-funds
     const params = new URLSearchParams(window.location.search);
     if (params.get("type") === "add-funds") {
       setIsAddFunds(true);
@@ -42,9 +30,9 @@ export default function PaymentMethodPage() {
     }
     setShowError(false);
     setLoading(true);
+    setStatusMessage(null);
 
     try {
-      // Fetch ke backend API Next.js untuk mendapatkan Snap Token Midtrans
       const response = await fetch("/api/midtrans/create-transaction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -53,47 +41,77 @@ export default function PaymentMethodPage() {
           amount: parseFloat(depositAmount) 
         })
       });
-      
-      // Amankan dari SyntaxError: Cek apakah status HTTP OK (200-299)
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Error Backend Response:", errorText);
-        alert(`Gagal memproses transaksi (${response.status}). Pastikan API Route '/api/midtrans/create-transaction' sudah ada.`);
-        return;
-      }
 
       const data = await response.json();
 
+      if (!response.ok) {
+        setStatusMessage(`Midtrans Error (${response.status}): ${data.error || "Gagal memproses transaksi"}`);
+        setLoading(false);
+        return;
+      }
+
       if (data.token) {
         if (window.snap) {
-          // Panggil Midtrans Snap Popup (QRIS, VA, E-Wallet, dll)
           window.snap.pay(data.token, {
             onSuccess: function (result) {
               console.log("Success:", result);
               localStorage.setItem("selectedPaymentMethod", "midtrans");
+
+              // === LOGIKA PENAMBAHAN SALDO & DEPOSIT OTOMATIS KE WALLET ===
+              if (isAddFunds) {
+                const amountNum = parseFloat(depositAmount);
+                
+                // 1. Ambil saldo lama atau default 9.95
+                const currentBalance = parseFloat(localStorage.getItem("walletBalance") || "9.95");
+                const newBalance = currentBalance + amountNum;
+                localStorage.setItem("walletBalance", newBalance.toString());
+
+                // 2. Ambil riwayat deposit lama atau buat array baru
+                const existingDeposits = JSON.parse(localStorage.getItem("walletDeposits") || JSON.stringify([
+                  { id: "BTR-HM95ZHFS7S-369RASZE", method: "Bank Transfer", amount: "$10 (USD) - Pending Payment", date: "2026-09-13 / 14:19" },
+                  { id: "BTR-HM0LWO7M4I-AG10P9OR", method: "Bank Transfer", amount: "$10 (USD) - Pending Payment", date: "2026-09-05 / 20:02" },
+                  { id: "BTR-HLWS2ZQSXN-5CTYLLNC", method: "Bank Transfer", amount: "$25 (USD) - Pending Payment", date: "2026-09-02 / 08:42" },
+                  { id: "BTR-HLVTZUEYA6-8ACIIO9U", method: "Bank Transfer", amount: "$100 (USD) - Pending Payment", date: "2026-09-01 / 12:05" },
+                ]));
+
+                // 3. Buat objek deposit baru berstatus Success
+                const newDeposit = {
+                  id: `BTR-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+                  method: "Midtrans Payment Gateway",
+                  amount: `$${amountNum} (USD) - Success`,
+                  date: new Date().toISOString().replace("T", " / ").substring(0, 16)
+                };
+
+                const updatedDeposits = [newDeposit, ...existingDeposits];
+                localStorage.setItem("walletDeposits", JSON.stringify(updatedDeposits));
+                localStorage.setItem("depositSuccess", "true");
+              }
+              // ==========================================================
+
               window.location.href = "/cart/payment-completed";
             },
             onPending: function (result) {
               console.log("Pending:", result);
-              alert("Menunggu pembayaran Anda.");
+              setStatusMessage("Menunggu pembayaran Anda.");
             },
             onError: function (result) {
               console.log("Error:", result);
-              alert("Pembayaran gagal!");
+              setStatusMessage("Pembayaran gagal!");
             },
             onClose: function () {
-              alert("Popup pembayaran ditutup.");
+              console.log("Popup closed");
+              setStatusMessage("Popup pembayaran ditutup.");
             }
           });
         } else {
-          alert("SDK Midtrans belum selesai dimuat. Silakan coba lagi sebentar.");
+          setStatusMessage("SDK Midtrans belum selesai dimuat. Silakan coba lagi.");
         }
       } else {
-        alert(data.error || "Gagal mendapatkan token transaksi dari Midtrans.");
+        setStatusMessage(data.error || "Gagal mendapatkan token transaksi dari Midtrans.");
       }
     } catch (err) {
       console.error("Network Error:", err);
-      alert("Terjadi kesalahan koneksi atau server tidak merespons.");
+      setStatusMessage("Terjadi kesalahan koneksi atau server tidak merespons.");
     } finally {
       setLoading(false);
     }
@@ -101,6 +119,12 @@ export default function PaymentMethodPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
+      <Script
+        src="https://app.sandbox.midtrans.com/snap/snap.js"
+        data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
+        strategy="lazyOnload"
+      />
+
       <Header />
 
       <main className="flex-grow max-w-7xl w-full mx-auto px-4 py-6">
@@ -112,7 +136,6 @@ export default function PaymentMethodPage() {
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-4">1. Payment Method</h2>
 
-              {/* Midtrans Selected Box */}
               <div className="border border-teal-500 bg-teal-50/20 rounded-xl p-5 flex items-center justify-between shadow-xs">
                 <div className="flex items-center space-x-4">
                   <div className="w-5 h-5 rounded-full bg-teal-600 flex items-center justify-center text-white text-xs">✓</div>
@@ -124,6 +147,12 @@ export default function PaymentMethodPage() {
                 <span className="text-xs bg-teal-100 text-teal-800 font-semibold px-3 py-1 rounded-full">Secure</span>
               </div>
             </div>
+
+            {statusMessage && (
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg">
+                {statusMessage}
+              </div>
+            )}
 
             <div className="pt-2 space-y-1.5">
               <div className="flex items-start gap-3">
