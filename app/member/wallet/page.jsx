@@ -24,16 +24,26 @@ export default function WalletPage() {
     { id: "BTR-HLVTZUEYA6-8ACIIO9U", method: "Bank Transfer", amount: "$100 (USD) - Pending Payment", date: "2026-09-01 / 12:05" },
   ]);
 
+  // State untuk Data Expenses (Pengeluaran Pembelian Produk)
+  const [expensesData, setExpensesData] = useState([]);
+
   // Load saldo & riwayat dari localStorage saat pertama kali dibuka
   useEffect(() => {
     const savedBalance = localStorage.getItem("walletBalance");
+    let currentBal = 9.95;
     if (savedBalance) {
-      setWalletBalance(parseFloat(savedBalance));
+      currentBal = parseFloat(savedBalance);
+      setWalletBalance(currentBal);
     }
 
     const savedDeposits = localStorage.getItem("walletDeposits");
     if (savedDeposits) {
       setDepositsData(JSON.parse(savedDeposits));
+    }
+
+    const savedExpenses = localStorage.getItem("walletExpenses");
+    if (savedExpenses) {
+      setExpensesData(JSON.parse(savedExpenses));
     }
 
     // Cek apakah ada deposit baru yang sukses dari halaman checkout/payment-completed
@@ -43,12 +53,10 @@ export default function WalletPage() {
     if (pendingAmount && isCompleted === "true") {
       const addedAmount = parseFloat(pendingAmount);
       
-      // Update saldo
-      const newBalance = (savedBalance ? parseFloat(savedBalance) : 9.95) + addedAmount;
-      setWalletBalance(newBalance);
-      localStorage.setItem("walletBalance", newBalance.toString());
+      currentBal += addedAmount;
+      setWalletBalance(currentBal);
+      localStorage.setItem("walletBalance", currentBal.toString());
 
-      // Buat data deposit baru
       const newDeposit = {
         id: `BTR-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
         method: "Midtrans Payment Gateway",
@@ -60,9 +68,36 @@ export default function WalletPage() {
       setDepositsData(updatedDeposits);
       localStorage.setItem("walletDeposits", JSON.stringify(updatedDeposits));
 
-      // Bersihkan flag agar tidak tereksekusi 2 kali
       localStorage.removeItem("pendingDepositAmount");
       localStorage.removeItem("depositSuccess");
+    }
+
+    // Cek apakah ada pembelian produk baru menggunakan wallet balance
+    const pendingProductAmount = localStorage.getItem("pendingProductAmount");
+    const pendingProductDesc = localStorage.getItem("pendingProductDesc");
+    const isProductCompleted = localStorage.getItem("productPurchaseSuccess");
+
+    if (pendingProductAmount && isProductCompleted === "true") {
+      const productAmount = parseFloat(pendingProductAmount);
+      
+      currentBal -= productAmount;
+      setWalletBalance(currentBal);
+      localStorage.setItem("walletBalance", currentBal.toString());
+
+      const newExpense = {
+        id: `INV-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+        expense: pendingProductDesc || "Pembelian Produk E-Commerce",
+        amount: `$${productAmount.toFixed(2)} (USD)`,
+        date: new Date().toISOString().replace("T", " / ").substring(0, 16)
+      };
+
+      const updatedExpenses = [newExpense, ...(savedExpenses ? JSON.parse(savedExpenses) : expensesData)];
+      setExpensesData(updatedExpenses);
+      localStorage.setItem("walletExpenses", JSON.stringify(updatedExpenses));
+
+      localStorage.removeItem("pendingProductAmount");
+      localStorage.removeItem("pendingProductDesc");
+      localStorage.removeItem("productPurchaseSuccess");
     }
   }, []);
 
@@ -71,10 +106,7 @@ export default function WalletPage() {
       alert("Minimum deposit amount is $10");
       return;
     }
-    // Simpan nominal ke localStorage agar bisa dibaca halaman checkout
     localStorage.setItem("pendingDepositAmount", depositAmount);
-    
-    // Alihkan langsung ke halaman payment method dengan parameter add-funds
     window.location.href = "/cart/payment-method?type=add-funds";
   };
 
@@ -169,21 +201,34 @@ export default function WalletPage() {
         {/* 2. TAB EXPENSES */}
         {activeTab === "expenses" && (
           <div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">
-                    <th className="py-3 px-4">Payment Id</th>
-                    <th className="py-3 px-4">Expense</th>
-                    <th className="py-3 px-4">Expense Amount</th>
-                    <th className="py-3 px-4">Date</th>
-                  </tr>
-                </thead>
-              </table>
-            </div>
-            <div className="py-16 text-center text-gray-500 text-sm">
-              No records found!
-            </div>
+            {expensesData.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">
+                      <th className="py-3 px-4">Payment Id</th>
+                      <th className="py-3 px-4">Expense</th>
+                      <th className="py-3 px-4">Expense Amount</th>
+                      <th className="py-3 px-4">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-sm">
+                    {expensesData.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50/50">
+                        <td className="py-4 px-4 font-medium text-gray-900">{item.id}</td>
+                        <td className="py-4 px-4 text-gray-600">{item.expense}</td>
+                        <td className="py-4 px-4 text-gray-900 font-medium">{item.amount}</td>
+                        <td className="py-4 px-4 text-gray-600">{item.date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-gray-500 text-sm">
+                No records found!
+              </div>
+            )}
           </div>
         )}
 

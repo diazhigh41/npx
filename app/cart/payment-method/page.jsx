@@ -4,9 +4,11 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../../components/Header"; 
 import Footer from "../../components/Footer";
+import { createClient } from "@/utils/supabase/client"; // Sesuaikan path client supabase Anda
 
 export default function PaymentMethodPage() {
   const router = useRouter();
+  const supabase = createClient();
   const [depositAmount, setDepositAmount] = useState("10");
   const [isAddFunds, setIsAddFunds] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -53,40 +55,63 @@ export default function PaymentMethodPage() {
       if (data.token) {
         if (window.snap) {
           window.snap.pay(data.token, {
-            onSuccess: function (result) {
+            onSuccess: async function (result) {
               console.log("Success:", result);
               localStorage.setItem("selectedPaymentMethod", "midtrans");
 
-              // === LOGIKA PENAMBAHAN SALDO & DEPOSIT OTOMATIS KE WALLET ===
+              // === LOGIKA PENAMBAHAN SALDO & DEPOSIT KE SUPABASE ===
               if (isAddFunds) {
                 const amountNum = parseFloat(depositAmount);
+                const paymentId = result.order_id || `BTR-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
                 
-                // 1. Ambil saldo lama atau default 9.95
-                const currentBalance = parseFloat(localStorage.getItem("walletBalance") || "9.95");
-                const newBalance = currentBalance + amountNum;
-                localStorage.setItem("walletBalance", newBalance.toString());
+                // Ambil user yang sedang login di Supabase
+                const { data: { user } } = await supabase.auth.getUser();
+                
+                if (user) {
+                  // 1. Cek atau ambil saldo wallet user saat ini dari Supabase
+                  let { data: walletData, error: walletError } = await supabase
+                    .from("wallets")
+                    .select("balance")
+                    .eq("user_id", user.id)
+                    .single();
 
-                // 2. Ambil riwayat deposit lama atau buat array baru
-                const existingDeposits = JSON.parse(localStorage.getItem("walletDeposits") || JSON.stringify([
-                  { id: "BTR-HM95ZHFS7S-369RASZE", method: "Bank Transfer", amount: "$10 (USD) - Pending Payment", date: "2026-09-13 / 14:19" },
-                  { id: "BTR-HM0LWO7M4I-AG10P9OR", method: "Bank Transfer", amount: "$10 (USD) - Pending Payment", date: "2026-09-05 / 20:02" },
-                  { id: "BTR-HLWS2ZQSXN-5CTYLLNC", method: "Bank Transfer", amount: "$25 (USD) - Pending Payment", date: "2026-09-02 / 08:42" },
-                  { id: "BTR-HLVTZUEYA6-8ACIIO9U", method: "Bank Transfer", amount: "$100 (USD) - Pending Payment", date: "2026-09-01 / 12:05" },
-                ]));
+                  let currentBalance = 9.95; // Default jika belum ada baris wallet
+                  if (walletData) {
+                    currentBalance = parseFloat(walletData.balance);
+                  }
 
-                // 3. Buat objek deposit baru berstatus Success
-                const newDeposit = {
-                  id: `BTR-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
-                  method: "Midtrans Payment Gateway",
-                  amount: `$${amountNum} (USD) - Success`,
-                  date: new Date().toISOString().replace("T", " / ").substring(0, 16)
-                };
+                  const newBalance = currentBalance + amountNum;
 
-                const updatedDeposits = [newDeposit, ...existingDeposits];
-                localStorage.setItem("walletDeposits", JSON.stringify(updatedDeposits));
+                  // 2. Update atau Insert saldo baru ke tabel 'wallets'
+                  const { error: upsertError } = await supabase
+                    .from("wallets")
+                    .upsert({ user_id: user.id, balance: newBalance, updated_at: new Date() }, { onConflict: 'user_id' });
+
+                  if (upsertError) {
+                    console.error("Gagal memperbarui saldo wallet:", upsertError.message);
+                  }
+
+                  // 3. Simpan riwayat transaksi sukses ke tabel 'wallet_deposits'
+                  const { error: depositError } = await supabase
+                    .from("wallet_deposits")
+                    .insert([
+                      {
+                        user_id: user.id,
+                        payment_id: paymentId,
+                        method: "Midtrans Payment Gateway",
+                        amount: amountNum,
+                        status: "Success"
+                      }
+                    ]);
+
+                  if (depositError) {
+                    console.error("Gagal mencatat riwayat deposit:", depositError.message);
+                  }
+                }
+                
                 localStorage.setItem("depositSuccess", "true");
               }
-              // ==========================================================
+              // ====================================================
 
               window.location.href = "/cart/payment-completed";
             },
