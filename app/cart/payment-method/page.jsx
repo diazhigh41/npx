@@ -4,12 +4,12 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../../components/Header"; 
 import Footer from "../../components/Footer";
-import { createClient } from "@/utils/supabase/client"; // Sesuaikan path client supabase Anda
+import { createClient } from "@/utils/supabase/client"; 
 
 export default function PaymentMethodPage() {
   const router = useRouter();
   const supabase = createClient();
-  const [depositAmount, setDepositAmount] = useState("10");
+  const [amount, setAmount] = useState("10"); // Menyimpan total harga (USD)
   const [isAddFunds, setIsAddFunds] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [showError, setShowError] = useState(false);
@@ -21,9 +21,43 @@ export default function PaymentMethodPage() {
     if (params.get("type") === "add-funds") {
       setIsAddFunds(true);
       const saved = localStorage.getItem("pendingDepositAmount");
-      if (saved) setDepositAmount(saved);
+      if (saved) setAmount(saved);
+    } else {
+      setIsAddFunds(false);
+      fetchCartTotalFromDatabase();
     }
   }, []);
+
+  // Fungsi otomatis ambil total harga dari database (tabel cart_items & products)
+  const fetchCartTotalFromDatabase = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Ambil data keranjang beserta harga dari tabel products
+      const { data: cartItems, error } = await supabase
+        .from("cart_items")
+        .select("quantity, products(price)")
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error("Gagal mengambil data keranjang:", error.message);
+        return;
+      }
+
+      if (cartItems && cartItems.length > 0) {
+        let totalPrice = 0;
+        cartItems.forEach(item => {
+          const productPrice = item.products?.price || 0;
+          const quantity = item.quantity || 1;
+          totalPrice += productPrice * quantity;
+        });
+        setAmount(totalPrice.toFixed(2));
+      }
+    } catch (err) {
+      console.error("Error calculating cart total:", err);
+    }
+  };
 
   const handlePayWithMidtrans = async () => {
     if (!agreed) {
@@ -40,7 +74,7 @@ export default function PaymentMethodPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           type: isAddFunds ? "add-funds" : "cart", 
-          amount: parseFloat(depositAmount) 
+          amount: parseFloat(amount) 
         })
       });
 
@@ -59,40 +93,28 @@ export default function PaymentMethodPage() {
               console.log("Success:", result);
               localStorage.setItem("selectedPaymentMethod", "midtrans");
 
-              // === LOGIKA PENAMBAHAN SALDO & DEPOSIT KE SUPABASE ===
+              // === LOGIKA PENAMBAHAN SALDO & DEPOSIT KE SUPABASE (JIKA ADD-FUNDS) ===
               if (isAddFunds) {
-                const amountNum = parseFloat(depositAmount);
+                const amountNum = parseFloat(amount);
                 const paymentId = result.order_id || `BTR-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
                 
-                // Ambil user yang sedang login di Supabase
                 const { data: { user } } = await supabase.auth.getUser();
                 
                 if (user) {
-                  // 1. Cek atau ambil saldo wallet user saat ini dari Supabase
-                  let { data: walletData, error: walletError } = await supabase
+                  let { data: walletData } = await supabase
                     .from("wallets")
                     .select("balance")
                     .eq("user_id", user.id)
                     .single();
 
-                  let currentBalance = 9.95; // Default jika belum ada baris wallet
-                  if (walletData) {
-                    currentBalance = parseFloat(walletData.balance);
-                  }
-
+                  let currentBalance = walletData ? parseFloat(walletData.balance) : 0;
                   const newBalance = currentBalance + amountNum;
 
-                  // 2. Update atau Insert saldo baru ke tabel 'wallets'
-                  const { error: upsertError } = await supabase
+                  await supabase
                     .from("wallets")
                     .upsert({ user_id: user.id, balance: newBalance, updated_at: new Date() }, { onConflict: 'user_id' });
 
-                  if (upsertError) {
-                    console.error("Gagal memperbarui saldo wallet:", upsertError.message);
-                  }
-
-                  // 3. Simpan riwayat transaksi sukses ke tabel 'wallet_deposits'
-                  const { error: depositError } = await supabase
+                  await supabase
                     .from("wallet_deposits")
                     .insert([
                       {
@@ -103,15 +125,10 @@ export default function PaymentMethodPage() {
                         status: "Success"
                       }
                     ]);
-
-                  if (depositError) {
-                    console.error("Gagal mencatat riwayat deposit:", depositError.message);
-                  }
                 }
                 
                 localStorage.setItem("depositSuccess", "true");
               }
-              // ====================================================
 
               window.location.href = "/cart/payment-completed";
             },
@@ -235,17 +252,17 @@ export default function PaymentMethodPage() {
                 <div className="font-semibold text-gray-900">{isAddFunds ? "Add Funds" : "Order Summary"}</div>
                 <div className="flex justify-between text-gray-600 text-xs">
                   <span>{isAddFunds ? "Deposit Amount:" : "Subtotal:"}</span>
-                  <span className="font-semibold text-gray-900">${depositAmount}</span>
+                  <span className="font-semibold text-gray-900">${amount}</span>
                 </div>
                 
                 <div className="pt-3 border-t border-gray-100 flex justify-between text-gray-800 font-medium text-sm">
                   <span>Subtotal</span>
-                  <span>${depositAmount}</span>
+                  <span>${amount}</span>
                 </div>
 
                 <div className="pt-3 border-t border-gray-100 flex justify-between text-lg font-bold text-gray-900">
                   <span>Total</span>
-                  <span className="text-gray-900">${depositAmount}</span>
+                  <span className="text-gray-900">${amount}</span>
                 </div>
               </div>
             </div>
