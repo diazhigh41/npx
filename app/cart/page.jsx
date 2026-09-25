@@ -2,8 +2,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Minus, Plus, Trash2 } from "lucide-react";
-import Header from "../components/Header";
-import Footer from "../components/Footer";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 import { createClient } from "../../utils/supabase/client";
 
 export default function CartPage() {

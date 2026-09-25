@@ -1,9 +1,9 @@
 import Link from "next/link";
-import Header from "../components/Header"; 
-import Footer from "../components/Footer";
-import CategoryFilterSidebar from "../components/CategoryFilterSidebar";
-import ProductCard from "../components/ProductCard";
-import { createClient } from "../../utils/supabase/server";
+import Header from "@/components/Header"; 
+import Footer from "@/components/Footer";
+import CategoryFilterSidebar from "@/components/CategoryFilterSidebar";
+import ProductCard from "@/components/ProductCard";
+import { createClient } from "@/utils/supabase/server";
 
 export default async function NewArrivalsPage() {
   const supabase = await createClient();

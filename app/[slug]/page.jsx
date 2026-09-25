@@ -5,8 +5,8 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 
-import Header from '@/app/components/Header';
-import Footer from '@/app/components/Footer';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
 
 export default function ProductDetail() {
   const params = useParams();

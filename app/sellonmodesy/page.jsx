@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import Header from "../components/Header";
-import Footer from "../components/Footer";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 
 export default function SellOnModesyPage() {
   return (

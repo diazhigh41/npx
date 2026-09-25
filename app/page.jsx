@@ -3,19 +3,19 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 
-import Header from "./components/Header";
-import MobileMenu from "./components/MobileMenu";
-import LoginModal from "./components/LoginModal"; 
-import Hero from "./components/Hero";
-import CategoryGrid from "./components/CategoryGrid";
-import ScrollRow from "./components/ScrollRow";
-import ProductGrid from "./components/ProductGrid";
-import PromoBanners from "./components/PromoBanners";
-import BrandList from "./components/BrandList";
-import BlogSection from "./components/BlogSection";
-import Footer from "./components/Footer";
-import { CartToast, CookieBanner } from "./components/Notifications";
-import { useCart } from "./context/CartContext";
+import Header from "@/components/Header";
+import MobileMenu from "@/components/MobileMenu";
+import LoginModal from "@/components/LoginModal"; 
+import Hero from "@/components/Hero";
+import CategoryGrid from "@/components/CategoryGrid";
+import ScrollRow from "@/components/ScrollRow";
+import ProductGrid from "@/components/ProductGrid";
+import PromoBanners from "@/components/PromoBanners";
+import BrandList from "@/components/BrandList";
+import BlogSection from "@/components/BlogSection";
+import Footer from "@/components/Footer";
+import { CartToast, CookieBanner } from "@/components/Notifications";
+import { useCart } from "../context/CartContext";
 import Link from "next/link";
 
 export default function ModesyLanding() {

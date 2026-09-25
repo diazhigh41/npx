@@ -1,8 +1,8 @@
 "use client";
 import React, { useState } from "react";
 import { Plus, Edit2, Trash2, Check, X, AlertTriangle, Truck } from "lucide-react";
-import Header from "../../components/Header";
-import Footer from "../../components/Footer";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 
 export default function ShippingPage() {
   // State daftar alamat

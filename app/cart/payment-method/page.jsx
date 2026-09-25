@@ -2,8 +2,8 @@
 import Script from 'next/script';
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Header from "../../components/Header"; 
-import Footer from "../../components/Footer";
+import Header from "@/components/Header"; 
+import Footer from "@/components/Footer";
 import { createClient } from "@/utils/supabase/client"; 
 
 export default function PaymentMethodPage() {
